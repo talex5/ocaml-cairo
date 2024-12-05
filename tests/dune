@@ -1,8 +1,8 @@
 
 (executables
- (names image_create matrix_set surface_gc test_for_stream
+ (names image_create matrix_set surface_gc surface_gc_mmap test_for_stream
         test_finish test_path test_exn)
- (libraries cairo2))
+ (libraries cairo2 unix))
 
 (alias
  (name runtest)

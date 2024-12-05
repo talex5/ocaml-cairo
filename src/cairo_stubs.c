@@ -1499,6 +1499,19 @@ static void caml_cairo_image_bigarray_finalize(void *data)
 #undef proxy
 }
 
+extern void caml_ba_unmap_file(void *, uintnat);
+
+static void caml_cairo_image_bigarray_finalize_mmap(void *data)
+{
+#define proxy ((struct caml_ba_proxy *) data)
+  /* Adapted from caml_ba_mapped_finalize in the OCaml library sources. */
+  if (-- proxy->refcount == 0) {
+    caml_ba_unmap_file(proxy->data, proxy->size);
+    free(proxy);
+  }
+#undef proxy
+}
+
 CAMLexport value caml_cairo_image_surface_create(value vformat,
                                                  value vwidth, value vheight)
 {
@@ -1574,11 +1587,13 @@ static cairo_status_t caml_cairo_image_bigarray_attach_proxy
     if (proxy == NULL) return(CAIRO_STATUS_NO_MEMORY);
     proxy->refcount = 2;      /* original array + surface */
     proxy->data = b->data;
-    proxy->size = 0; /* CAML_BA_MAPPED_FILE excluded by the calling fun */
+    proxy->size = b->flags & CAML_BA_MAPPED_FILE ? caml_ba_byte_size(b) : 0;
     b->proxy = proxy;
   }
   return cairo_surface_set_user_data(surf, &image_bigarray_key, b->proxy,
-                                     caml_cairo_image_bigarray_finalize);
+                                     b->flags & CAML_BA_MAPPED_FILE
+				     ? caml_cairo_image_bigarray_finalize_mmap
+				     : caml_cairo_image_bigarray_finalize);
 }
 
 #define b (Caml_ba_array_val(vb))
@@ -1592,9 +1607,6 @@ static cairo_status_t caml_cairo_image_bigarray_attach_proxy
     const int width =  Int_val(vwidth);                                 \
     cairo_status_t status;                                              \
                                                                         \
-    if ((b->flags & CAML_BA_MANAGED_MASK) == CAML_BA_MAPPED_FILE)       \
-      caml_invalid_argument("Cairo.Image.create_for_" #name             \
-                            ": cannot use a memory mapped file.");      \
     vsurf = ALLOC(surface); /* alloc this first in case it raises an exn */ \
     surf = cairo_image_surface_create_for_data                          \
       ((unsigned char *) b->data, FORMAT_VAL(vformat),                  \
